@@ -1,0 +1,77 @@
+# var.region
+# var.account_id
+# var.bucket_name
+# var.bucket_id
+## comment kms_master_key_id if u are getting an error, we can try this later
+
+resource "aws_s3_bucket" "s3_log_bucket" {
+  bucket = "my-s3-log-bucket"
+  acl = "log-delivery-write"
+}
+resource "aws_kms_key" "s3bucketkey" {
+  description = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+
+resource "aws_s3_bucket" "mybucket" {
+  bucket = "${var.bucket_name}"
+  acl = "private"
+
+  logging {
+    target_bucket = "${aws_s3_bucket.s3_log_bucket.id}"
+    target_prefix = "log/"
+  },
+  server_side_encryption_configuration {
+    rule {
+        apply_server_side_encryption_by_default {
+            kms_master_key_id = "${aws_kms_key.s3bucketkey.arn}"
+            sse_algorithm     = "aws:kms"
+      }
+    }
+  }
+}
+
+resource "aws_iam_policy" "service_account_policy" {
+  name        = "service_acc_test_policy"
+  path        = "/"
+  description = "this policy has permissions to access the specific bucket and also to the specific proxy server"
+
+  policy = <<EOF
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Sid": "",
+              "Effect": "Allow",
+              "Action": [
+                  "s3:GetAccessPoint",
+                  "s3:PutAccountPublicAccessBlock",
+                  "s3:GetAccountPublicAccessBlock",
+                  "s3:ListAllMyBuckets",
+                  "s3:ListAccessPoints",
+                  "s3:ListJobs",
+                  "s3:CreateJob",
+                  "s3:HeadBucket"
+              ],
+              "Resource": "*",
+              "Condition": {
+                   "IpAddress": {
+                       "aws:SourceIp": "10.210.0.0/16"
+                   }
+              }
+          },
+          {
+              "Sid": "",
+              "Effect": "Allow",
+              "Action": "s3:*",
+              "Resource": "arn:aws:s3:::${var.bucket_name}",
+              "Condition": {
+                   "IpAddress": {
+                       "aws:SourceIp": "${var.proxy_ip}"
+                   }
+              }
+          }
+      ]
+  }
+  EOF
+}
